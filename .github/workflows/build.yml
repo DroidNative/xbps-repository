@@ -35,7 +35,7 @@ jobs:
       void_commit: ${{ steps.void.outputs.commit }}
       archs: ${{ steps.plan.outputs.archs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - id: void
         name: Resolve void-packages master
@@ -60,7 +60,7 @@ jobs:
           done
           echo "archs=[$(IFS=,; echo "${todo[*]}")]" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: plan
           path: out/plan-*
@@ -75,13 +75,13 @@ jobs:
       matrix:
         arch: ${{ fromJSON(needs.plan.outputs.archs) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Mesa's build dependencies (LLVM, Rust, clang) need the room
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: plan
           path: out
@@ -94,7 +94,7 @@ jobs:
           mkdir -p out/repo && chmod -R a+rwX out
           ./xbps.sh build -p -a "${{ matrix.arch }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: repo-${{ matrix.arch }}
           path: out/repo/
@@ -105,20 +105,23 @@ jobs:
     if: ${{ !cancelled() && needs.plan.outputs.archs != '[]' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Fetch the published repository
         run: |
           mkdir -p out/repo
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release download "$RELEASE_TAG" --dir out/repo
+            # A new release has no assets yet, and download fails on that
+            if [ "$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | length')" -gt 0 ]; then
+              gh release download "$RELEASE_TAG" --dir out/repo
+            fi
           else
             gh release create "$RELEASE_TAG" --title "Current packages" \
               --notes "xbps repository of DroidNative's packages, rebuilt automatically. Use https://github.com/$GH_REPO/releases/download/$RELEASE_TAG as repository URL."
           fi
           ls out/repo | sort > before.txt
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: repo-*
           path: out/repo
