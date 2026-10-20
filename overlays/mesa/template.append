@@ -1,0 +1,20 @@
+# Lets EGL on Wayland use Zink+kopper on the hardware Vulkan device when no
+# DRM device exists (Android): patches/droidnative-egl-kopper-without-drm.patch
+
+# rustc 1.99 rejects a repeated --sysroot. The meson cross file passes it
+# already, so drop the copy in RUSTFLAGS and keep the cross file's. This
+# replaces Void's post_configure, which removed the cross file's copy from
+# build.ninja (meson regenerates that file, so the removal did not stick).
+pre_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		export RUSTFLAGS="${RUSTFLAGS//--sysroot=${XBPS_CROSS_BASE}\/usr/}"
+	fi
+}
+
+post_configure() {
+	if [ "$CROSS_BUILD" ]; then
+		find -iname "*.ninja" -exec sed -i "{}" \
+			-e "s|-isystem/usr/include||g" \
+		\;
+	fi
+}

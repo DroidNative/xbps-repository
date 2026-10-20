@@ -1,0 +1,151 @@
+# Keeps the published repository (release "current") installable on Void's
+# rolling repository: every 6 hours, on pushes and on demand, plan.sh checks
+# each architecture and only what changed or broke is rebuilt and uploaded.
+name: Build repository
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild every package
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Publishing must never interleave
+concurrency:
+  group: xbps-repository
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: current
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      void_commit: ${{ steps.void.outputs.commit }}
+      archs: ${{ steps.plan.outputs.archs }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: void
+        name: Resolve void-packages master
+        run: echo "commit=$(git ls-remote https://github.com/void-linux/void-packages.git refs/heads/master | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - id: plan
+        name: Plan
+        env:
+          VOID_PACKAGES_REF: ${{ steps.void.outputs.commit }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DN_FORCE: ${{ inputs.force && '1' || '' }}
+        run: |
+          mkdir -p out/repo && chmod -R a+rwX out
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            export DN_PUBLISHED_URL="https://github.com/$GH_REPO/releases/download/$RELEASE_TAG"
+          fi
+          archs=$(grep -v -E '^[[:space:]]*(#|$)' packages.conf | awk '{ print $2 }' | tr , '\n' | sort -u)
+          todo=()
+          for a in $archs; do
+            ./xbps.sh plan "$a"
+            [ -s "out/plan-$a" ] && todo+=("\"$a\"")
+          done
+          echo "archs=[$(IFS=,; echo "${todo[*]}")]" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan
+          path: out/plan-*
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.archs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(needs.plan.outputs.archs) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mesa's build dependencies (LLVM, Rust, clang) need the room
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: out
+
+      - name: Build
+        env:
+          VOID_PACKAGES_REF: ${{ needs.plan.outputs.void_commit }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out/repo && chmod -R a+rwX out
+          ./xbps.sh build -p -a "${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repo-${{ matrix.arch }}
+          path: out/repo/
+
+  publish:
+    needs: [plan, build]
+    # Publish whatever built, even when another architecture failed
+    if: ${{ !cancelled() && needs.plan.outputs.archs != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the published repository
+        run: |
+          mkdir -p out/repo
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release download "$RELEASE_TAG" --dir out/repo
+          else
+            gh release create "$RELEASE_TAG" --title "Current packages" \
+              --notes "xbps repository of DroidNative's packages, rebuilt automatically. Use https://github.com/$GH_REPO/releases/download/$RELEASE_TAG as repository URL."
+          fi
+          ls out/repo | sort > before.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: repo-*
+          path: out/repo
+          merge-multiple: true
+
+      # xbps installs only from signed remote repositories. The secret holds
+      # the private key (PEM) made by ./xbps.sh keygen.
+      - name: Index and sign
+        env:
+          VOID_PACKAGES_REF: ${{ needs.plan.outputs.void_commit }}
+          XBPS_SIGNING_KEY: ${{ secrets.XBPS_SIGNING_KEY }}
+        run: |
+          [ -n "$XBPS_SIGNING_KEY" ] || { echo "::error::secret XBPS_SIGNING_KEY is not set"; exit 1; }
+          chmod -R a+rwX out
+          ls out/repo/*-sources.new >/dev/null 2>&1 || { echo "nothing built"; exit 1; }
+          printf '%s\n' "$XBPS_SIGNING_KEY" > "$RUNNER_TEMP/signing.pem"
+          chmod 644 "$RUNNER_TEMP/signing.pem"   # read by the container's user
+          DN_SIGNING_KEY="$RUNNER_TEMP/signing.pem" ./xbps.sh index
+
+      # Packages first, then the indexes that list them, then the removals
+      - name: Upload
+        run: |
+          ls out/repo | sort > after.txt
+          cd out/repo
+          new=$(comm -13 ../../before.txt ../../after.txt | grep -E '\.xbps(\.sig2)?$' || true)
+          [ -z "$new" ] || gh release upload "$RELEASE_TAG" $new --clobber
+          gh release upload "$RELEASE_TAG" ./*-repodata ./*-sources --clobber
+          for f in $(comm -23 ../../before.txt ../../after.txt); do
+            gh release delete-asset "$RELEASE_TAG" "$f" --yes
+          done
