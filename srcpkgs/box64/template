@@ -1,0 +1,33 @@
+# Template file for 'box64'
+# x86_64 (and, through BOX32, i386) Linux programs on aarch64. Registers in
+# /etc/binfmt.d, which DroidNative's proot reads instead of binfmt_misc.
+pkgname=box64
+# main after 0.4.4: Steam's 32-bit client needs __sched_cpualloc/cpufree
+# in BOX32's libc (box64 #4381)
+version=0.4.4.20261020
+revision=1
+_commit=ae3412c1bf9179b341996e18b656f11fd145f01e
+archs="aarch64*"
+build_style=cmake
+# ARM64: generic target (no -mcpu), dynarec features are detected at run
+# time. BAD_SIGNAL: Android kernels deliver incoherent si_info on SIGSEGV.
+configure_args="-DARM64=ON -DARM_DYNAREC=ON -DBAD_SIGNAL=ON -DBOX32=ON
+ -DBOX32_BINFMT=ON -DNOGIT=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+hostmakedepends="python3"
+conf_files="/etc/box64.box64rc"
+short_desc="Linux userspace x86_64 emulator with native library wrapping (DroidNative build)"
+maintainer="DroidNative <demouser@example.invalid>"
+license="MIT"
+homepage="https://github.com/ptitSeb/box64"
+distfiles="https://github.com/ptitSeb/box64/archive/${_commit}.tar.gz"
+checksum=d1cce91ee1863e3d0eca65faaa28a8c8d2e05783077e081d7857ee0df06fbee5
+# The bundled x86 libraries are for the emulated side: no stripping, and
+# they neither provide nor need native shared libraries
+nostrip=yes
+noshlibprovides=yes
+noverifyrdeps=yes
+skiprdeps="/usr/lib/box64-x86_64-linux-gnu/* /usr/lib/box64-i386-linux-gnu/*"
+
+post_install() {
+	vlicense LICENSE
+}

@@ -1,0 +1,34 @@
+# Template file for 'box86'
+# i386 Linux programs on 32-bit ARM (armv7l userland, also on 64-bit
+# phones that run a 32-bit Android). aarch64 uses box64 with BOX32 instead.
+pkgname=box86
+version=0.3.8
+revision=1
+archs="armv7l*"
+build_style=cmake
+# box86 has no generic ARMv7 target: these are its RPI2 flags (NEON,
+# hard float), which every ARMv7 phone CPU supports
+configure_args="-DARM_DYNAREC=ON -DLD80BITS=OFF -DNOALIGN=OFF -DNOGIT=ON
+ -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+CFLAGS="-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
+hostmakedepends="python3"
+conf_files="/etc/box86.box86rc"
+short_desc="Linux userspace i386 emulator with native library wrapping (DroidNative build)"
+maintainer="DroidNative <demouser@example.invalid>"
+license="MIT"
+homepage="https://github.com/ptitSeb/box86"
+distfiles="https://github.com/ptitSeb/box86/archive/refs/tags/v${version}.tar.gz"
+checksum=454e5f7c57f7c7c4530d4f453bf6afd07b00bd93c92fe16a4305bacae0b6a93d
+nostrip=yes
+noshlibprovides=yes
+noverifyrdeps=yes
+skiprdeps="/usr/lib/box86-i386-linux-gnu/*"
+
+pre_configure() {
+	# CMake takes the assembler flags from the environment
+	export ASMFLAGS="-marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard"
+}
+
+post_install() {
+	vlicense LICENSE
+}

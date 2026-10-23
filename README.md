@@ -1,8 +1,12 @@
 # DroidNative xbps repository
 
 Void Linux packages DroidNative installs into its guest: Turnip for Adreno
-on KGSL, Mesa with the Zink/kopper patch, the Flatpak GL extension, gl4es
-and `droidnative-tools`. Void is rolling, so a GitHub workflow keeps the
+on KGSL and Mesa with the Zink/kopper patch (aarch64 and armv7l), the
+Flatpak GL extension, gl4es, `droidnative-tools`, the x86 emulators box64
+(aarch64, with BOX32 for 32-bit x86) and box86 (armv7l), and
+`droidnative-steam`, a launcher that runs Valve's Linux Steam client
+through box64, and `wine-x86`, Kron4ek's portable x86_64 WoW64 Wine build
+for box64. Void is rolling, so a GitHub workflow keeps the
 published repository installable against Void's current one.
 
 Repository URL (what DroidNative's `DN_XBPS_REPO` points at):

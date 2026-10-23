@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wine Configuration
+Comment=Settings of Wine, which runs Windows programs
+Exec=winecfg
+Icon=wine
+Categories=Settings;
+Terminal=false

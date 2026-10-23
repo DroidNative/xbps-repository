@@ -1,0 +1,18 @@
+# Template file for 'droidnative-steam'
+# Launcher for Valve's Linux Steam client on aarch64 through box64. Steam
+# itself is not packaged: the first start downloads Valve's bootstrap, as
+# Debian's steam-installer does.
+pkgname=droidnative-steam
+version=0.1.0
+revision=1
+archs="aarch64*"
+depends="box64 bash curl tar xz file lsof dbus"
+short_desc="Steam on ARM through box64 (DroidNative)"
+maintainer="DroidNative <demouser@example.invalid>"
+license="MIT"
+homepage="https://github.com/DroidNative/xbps-repository"
+
+do_install() {
+	vbin "${FILESDIR}/steam"
+	vinstall "${FILESDIR}/steam.desktop" 644 usr/share/applications
+}

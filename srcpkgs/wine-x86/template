@@ -1,0 +1,53 @@
+# Template file for 'wine-x86'
+# x86_64 Wine for aarch64, run by box64 through proot's binfmt emulation.
+# Repackages Kron4ek's portable WoW64 build, the one box64's docs/WINE.md
+# recommends: it runs 32- and 64-bit Windows programs without 32-bit Linux
+# libraries, so box64 alone (no BOX32) is enough. The libraries Wine loads
+# at run time (X11, GL, Vulkan, sound, fonts, TLS) are wrapped by box64,
+# which calls the native aarch64 ones listed in depends.
+pkgname=wine-x86
+version=11.0
+revision=1
+archs="aarch64*"
+wrksrc="wine-${version}-amd64-wow64"
+depends="box64 libX11 libXext libXrender libXrandr libXi libXcursor libXinerama
+ libXcomposite libXfixes libXxf86vm libxkbcommon freetype fontconfig gnutls
+ libglvnd vulkan-loader alsa-lib libpulseaudio dbus-libs"
+short_desc="Wine for x86 Windows programs through box64 (DroidNative)"
+maintainer="DroidNative <demouser@example.invalid>"
+license="LGPL-2.1-or-later"
+homepage="https://www.winehq.org/"
+distfiles="https://github.com/Kron4ek/Wine-Builds/releases/download/${version}/wine-${version}-amd64-wow64.tar.xz"
+checksum=39574efa1132c3ca0d5c77dd2eddbe4a49cca0d6cc2c290ff4924493a1c40314
+# x86_64 ELF files and Windows PE files: nothing to strip or to resolve
+# against aarch64 libraries
+nostrip=yes
+noshlibprovides=yes
+noverifyrdeps=yes
+skiprdeps="/opt/wine-x86/bin/* /opt/wine-x86/lib/wine/x86_64-unix/*"
+
+# Programs on PATH. Wine finds its libraries next to the real file: box64
+# resolves the symlink (realpath of argv[0], what /proc/self/exe returns)
+_tools="wine wineserver wineboot winecfg wineconsole winedbg winefile winemine
+ winepath regedit regsvr32 msiexec msidb notepad"
+
+do_install() {
+	local dest=opt/wine-x86 t
+
+	vmkdir ${dest}/bin
+	vmkdir ${dest}/share
+	for t in ${_tools}; do
+		cp -a bin/${t} ${DESTDIR}/${dest}/bin/
+		vmkdir usr/bin
+		ln -s /${dest}/bin/${t} ${DESTDIR}/usr/bin/${t}
+	done
+	cp -a lib ${DESTDIR}/${dest}/
+	cp -a share/wine ${DESTDIR}/${dest}/share/
+	# Import libraries are for building Windows programs (winegcc), which
+	# this package leaves out
+	find ${DESTDIR}/${dest}/lib -name '*.a' -type f -delete
+
+	# Opens .exe/.msi files from file managers
+	vinstall share/applications/wine.desktop 644 usr/share/applications
+	vinstall ${FILESDIR}/winecfg.desktop 644 usr/share/applications
+}

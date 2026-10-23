@@ -1,0 +1,46 @@
+#!/bin/sh
+# steam: Valve's Linux Steam client on ARM, run by box64 (BOX32 for the
+# 32-bit parts) through proot's binfmt emulation. The first start downloads
+# the bootstrap into ~/.local/share/droidnative/steam-launcher; Steam then
+# installs itself into ~/.local/share/Steam as on x86.
+#   steam --dn-reinstall   download the bootstrap again
+set -e
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+BASE="$DATA/droidnative/steam-launcher"
+URL="${DN_STEAM_URL:-https://repo.steampowered.com/steam/archive/stable/steam_latest.tar.gz}"
+
+command -v box64 >/dev/null || { echo "steam: box64 is not installed" >&2; exit 1; }
+
+if [ "${1:-}" = --dn-reinstall ]; then
+    shift
+    rm -rf "${BASE:?}"
+fi
+
+if [ ! -f "$BASE/bin_steam.sh" ]; then
+    echo "steam: downloading the Steam bootstrap" >&2
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/dn-steam.XXXXXX")"
+    trap 'rm -rf "$tmp"' EXIT
+    curl -fL --retry 3 -o "$tmp/steam.tar.gz" "$URL"
+    tar -xzf "$tmp/steam.tar.gz" -C "$tmp"
+    mkdir -p "$(dirname "$BASE")"
+    rm -rf "${BASE:?}"
+    mv "$tmp/steam-launcher" "$BASE"
+    for size in 16 24 32 48 256; do
+        if [ -f "$BASE/icons/$size/steam.png" ]; then
+            mkdir -p "$DATA/icons/hicolor/${size}x$size/apps"
+            cp "$BASE/icons/$size/steam.png" "$DATA/icons/hicolor/${size}x$size/apps/"
+        fi
+    done
+    rm -rf "$tmp"
+    trap - EXIT
+fi
+
+# STEAMOS skips the Debian dependency check, PROTON_USE_WOW64 runs 32-bit
+# Windows games in 64-bit Wine (less work for BOX32)
+export STEAMOS=1 STEAM_RUNTIME=1 DBUS_FATAL_WARNINGS=0 PROTON_USE_WOW64=1
+# -cef-force-gpu: Steam turns GPU rendering of its web UI off here and falls
+# back to SwiftShader, whose x86 Vulkan driver the native loader (box64
+# wraps it) cannot use; with the GPU the UI renders through Mesa.
+# -noverifyfiles: the verification re-extracts the whole client (minutes
+# under PRoot) on every start.
+exec bash "$BASE/bin_steam.sh" -noverifyfiles -cef-force-gpu "$@"
